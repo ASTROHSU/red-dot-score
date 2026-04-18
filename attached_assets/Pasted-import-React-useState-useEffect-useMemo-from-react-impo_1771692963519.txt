@@ -1,0 +1,370 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Trash2, RotateCcw, Calculator, UserPlus, CheckCircle2, X, AlertTriangle, Trophy, Save, Check, Zap, Edit2, Coins } from 'lucide-react';
+
+const App = () => {
+  // 玩家名單
+  const [players, setPlayers] = useState([
+    { id: 1, name: '玩家 1' },
+    { id: 2, name: '玩家 2' },
+    { id: 3, name: '玩家 3' },
+    { id: 4, name: '玩家 4' }
+  ]);
+  
+  const [baseScore, setBaseScore] = useState(60); 
+  const [exchangeRate, setExchangeRate] = useState(5); // 匯率（一分多少錢）
+  const [gameHistory, setGameHistory] = useState([]);
+  const [currentScores, setCurrentScores] = useState({});
+  const [isEditingPlayers, setIsEditingPlayers] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [isDouble, setIsDouble] = useState(false);
+  
+  // 編輯模式狀態
+  const [editingRoundIndex, setEditingRoundIndex] = useState(null);
+
+  // 初始化輸入框
+  useEffect(() => {
+    const initial = { ...currentScores };
+    let hasChanges = false;
+    players.forEach(p => {
+      if (initial[p.id] === undefined) {
+        initial[p.id] = '';
+        hasChanges = true;
+      }
+    });
+    if (hasChanges) {
+      setCurrentScores(initial);
+    }
+  }, [players]);
+
+  // 計算累計總分
+  const totalStandings = useMemo(() => {
+    const totals = {};
+    players.forEach(p => totals[p.id] = 0);
+    gameHistory.forEach(round => {
+      players.forEach(p => {
+        if (round.scores && round.scores[p.id] !== undefined) {
+          totals[p.id] += round.scores[p.id];
+        }
+      });
+    });
+    return totals;
+  }, [players, gameHistory]);
+
+  // 校驗邏輯
+  const totalEntered = Object.values(currentScores).reduce((sum, val) => sum + (Number(val) || 0), 0);
+  const requiredTotal = baseScore * players.length;
+  const isScoreValid = totalEntered === requiredTotal;
+
+  // 新增玩家
+  const addPlayer = () => {
+    if (newPlayerName.trim()) {
+      setPlayers([...players, { id: Date.now(), name: newPlayerName.trim() }]);
+      setNewPlayerName('');
+    }
+  };
+
+  // 移除玩家
+  const removePlayer = (id) => {
+    if (players.length <= 1) return;
+    setPlayers(players.filter(p => p.id !== id));
+  };
+
+  // 修改名稱
+  const updatePlayerName = (id, newName) => {
+    setPlayers(players.map(p => p.id === id ? { ...p, name: newName } : p));
+  };
+
+  // 提交/更新分數
+  const submitRound = () => {
+    if (!isScoreValid) return;
+
+    const roundScores = {};
+    const multiplier = isDouble ? 2 : 1;
+
+    players.forEach(p => {
+      const score = Number(currentScores[p.id]) || 0;
+      roundScores[p.id] = (score - baseScore) * multiplier;
+    });
+
+    if (editingRoundIndex !== null) {
+      const updatedHistory = [...gameHistory];
+      updatedHistory[editingRoundIndex] = { 
+        scores: roundScores, 
+        isDouble, 
+        rawScores: { ...currentScores } 
+      };
+      setGameHistory(updatedHistory);
+      setEditingRoundIndex(null);
+    } else {
+      setGameHistory([{ 
+        scores: roundScores, 
+        isDouble, 
+        rawScores: { ...currentScores } 
+      }, ...gameHistory]);
+    }
+    
+    const reset = {};
+    players.forEach(p => reset[p.id] = '');
+    setCurrentScores(reset);
+    setIsDouble(false);
+  };
+
+  const editRound = (index) => {
+    const round = gameHistory[index];
+    setEditingRoundIndex(index);
+    setIsDouble(round.isDouble);
+    const restoredScores = {};
+    players.forEach(p => {
+      restoredScores[p.id] = round.rawScores ? round.rawScores[p.id] : (round.scores[p.id] / (round.isDouble ? 2 : 1)) + baseScore;
+    });
+    setCurrentScores(restoredScores);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const deleteRound = (index) => {
+    if (confirm('確定要刪除這一局的紀錄嗎？')) {
+      const updatedHistory = gameHistory.filter((_, i) => i !== index);
+      setGameHistory(updatedHistory);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingRoundIndex(null);
+    setIsDouble(false);
+    const reset = {};
+    players.forEach(p => reset[p.id] = '');
+    setCurrentScores(reset);
+  };
+
+  const resetGame = () => {
+    if (confirm('確定要清除所有紀錄嗎？')) {
+      setGameHistory([]);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-3 pb-10 font-sans text-slate-900">
+      <div className="max-w-md mx-auto">
+        
+        {/* 1. 目前總結算與匯率設定 */}
+        <section className="mb-4 space-y-2">
+          <div className="flex justify-between items-center px-1">
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+              <Trophy size={12} /> 累計結算 (含金額)
+            </h2>
+            <div className="flex items-center gap-3">
+              {/* 基準分設定 */}
+              <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-full shadow-sm border border-slate-100">
+                <span className="text-[10px] text-slate-400 font-bold">基準:</span>
+                <input 
+                  type="number"
+                  className="w-8 text-center bg-transparent text-[10px] font-black text-red-600 outline-none"
+                  value={baseScore}
+                  onChange={(e) => setBaseScore(Number(e.target.value))}
+                />
+              </div>
+              {/* 匯率設定 */}
+              <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-full shadow-sm border border-slate-100">
+                <Coins size={10} className="text-amber-500" />
+                <span className="text-[10px] text-slate-400 font-bold">匯率:</span>
+                <input 
+                  type="number"
+                  className="w-10 text-center bg-transparent text-[10px] font-black text-amber-600 outline-none"
+                  value={exchangeRate}
+                  onChange={(e) => setExchangeRate(Number(e.target.value))}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {players.map(p => (
+              <div key={p.id} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center relative overflow-hidden">
+                <div className="text-[10px] font-bold text-slate-400 truncate w-full text-center mb-1">{p.name}</div>
+                <div className={`text-xl font-black leading-none ${totalStandings[p.id] >= 0 ? 'text-red-500' : 'text-blue-600'}`}>
+                  {totalStandings[p.id] > 0 ? `+${totalStandings[p.id]}` : totalStandings[p.id]}
+                </div>
+                <div className="text-[10px] font-mono mt-1 font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
+                  $ {totalStandings[p.id] * exchangeRate}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 2. 每局輸入區 */}
+        <div className={`bg-white rounded-3xl p-5 shadow-lg border-2 mb-4 transition-colors ${editingRoundIndex !== null ? 'border-amber-400 shadow-amber-100/20' : 'border-transparent'}`}>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-sm font-black text-slate-800 flex items-center gap-2">
+              <Calculator size={16} className={editingRoundIndex !== null ? 'text-amber-500' : 'text-red-500'} /> 
+              {editingRoundIndex !== null ? `修改局數` : '本局記分'}
+            </h2>
+            <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setIsDouble(!isDouble)}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${isDouble ? 'bg-amber-500 text-white shadow-md scale-105' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}
+                >
+                  <Zap size={12} fill={isDouble ? "currentColor" : "none"} />
+                  DOUBLE
+                </button>
+                <button 
+                  onClick={() => setIsEditingPlayers(!isEditingPlayers)}
+                  className={`p-1.5 rounded-lg transition-all ${isEditingPlayers ? 'bg-red-500 text-white' : 'bg-white text-slate-400 border border-slate-200 shadow-sm'}`}
+                >
+                  {isEditingPlayers ? <X size={16} /> : <UserPlus size={16} />}
+                </button>
+            </div>
+          </div>
+
+          {/* 玩家編輯面板 */}
+          {isEditingPlayers && (
+            <div className="mb-6 p-4 bg-slate-900 rounded-2xl space-y-3 shadow-xl">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {players.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2">
+                    <input 
+                      type="text"
+                      className="flex-1 bg-slate-800 text-white px-3 py-2 text-xs font-bold border border-slate-700 rounded-lg outline-none focus:border-red-500"
+                      value={p.name}
+                      onChange={(e) => updatePlayerName(p.id, e.target.value)}
+                    />
+                    <button onClick={() => removePlayer(p.id)} className="text-slate-500 hover:text-red-400 p-1">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-1 border-t border-slate-800">
+                <input 
+                  type="text" 
+                  placeholder="新玩家名稱"
+                  className="flex-1 p-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white outline-none"
+                  value={newPlayerName}
+                  onChange={(e) => setNewPlayerName(e.target.value)}
+                />
+                <button onClick={addPlayer} className="bg-white text-slate-900 px-3 py-2 rounded-lg text-xs font-black">新增</button>
+              </div>
+              <button onClick={() => setIsEditingPlayers(false)} className="w-full mt-2 py-2.5 bg-red-500 text-white rounded-lg text-xs font-black flex items-center justify-center gap-2">
+                <Check size={14} /> 完成編輯
+              </button>
+            </div>
+          )}
+          
+          <div className="space-y-3">
+            {players.map(p => (
+              <div key={p.id} className="flex items-center gap-3">
+                <div className="w-16">
+                   <div className="text-[10px] font-black text-slate-400 truncate">{p.name}</div>
+                   <div className={`text-[9px] font-mono font-bold ${Number(currentScores[p.id] || 0) - baseScore >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
+                      {currentScores[p.id] 
+                        ? (isDouble ? '×2 ' : '') + ((Number(currentScores[p.id]) - baseScore) * (isDouble ? 2 : 1)) 
+                        : '--'}
+                   </div>
+                </div>
+                <input 
+                  type="number" 
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="flex-1 p-3 bg-slate-50 border-2 border-transparent rounded-xl text-right text-xl font-black focus:bg-white focus:border-red-400 transition-all outline-none"
+                  value={currentScores[p.id] ?? ''}
+                  onChange={(e) => setCurrentScores({...currentScores, [p.id]: e.target.value})}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* 總計與提交區塊 */}
+          <div className="mt-5 pt-4 border-t border-slate-50 space-y-3">
+            <div className={`flex items-center justify-between px-4 py-2.5 rounded-xl border transition-colors ${isScoreValid ? 'bg-green-50 border-green-100 text-green-700' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+              <div className="flex items-center gap-2 text-xs font-black">
+                {isScoreValid ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                <span>總計: {totalEntered} / {requiredTotal}</span>
+              </div>
+              {!isScoreValid && (
+                <span className="text-[10px] font-black px-2 py-0.5 bg-white rounded-full">
+                  {totalEntered > requiredTotal ? `+${totalEntered - requiredTotal}` : `${totalEntered - requiredTotal}`}
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              {editingRoundIndex !== null && (
+                <button 
+                  onClick={cancelEdit}
+                  className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-lg border border-slate-200"
+                >
+                  取消
+                </button>
+              )}
+              <button 
+                disabled={!isScoreValid}
+                onClick={submitRound}
+                className={`flex-[2] py-4 rounded-2xl font-black text-lg shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 ${
+                  isScoreValid 
+                  ? editingRoundIndex !== null ? 'bg-amber-500 text-white shadow-amber-100' : 'bg-red-500 text-white shadow-red-100' 
+                  : 'bg-slate-100 text-slate-300 cursor-not-allowed border border-slate-200'
+                }`}
+              >
+                <Save size={20} /> {editingRoundIndex !== null ? '確認修改' : '儲存本局'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. 歷史紀錄 */}
+        {gameHistory.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50/50 border-b flex justify-between items-center">
+              <h3 className="font-bold text-slate-400 text-[9px] tracking-widest uppercase">歷史紀錄</h3>
+              <button onClick={resetGame} className="text-slate-300 hover:text-red-500 transition-colors">
+                <RotateCcw size={14} />
+              </button>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-center border-collapse">
+                <thead className="sticky top-0 bg-white shadow-sm z-10">
+                  <tr className="text-[9px] text-slate-300 border-b">
+                    <th className="p-2 font-bold text-left w-12">局</th>
+                    {players.map(p => (
+                      <th key={p.id} className="p-2 font-black truncate">{p.name}</th>
+                    ))}
+                    <th className="p-2 w-16">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {gameHistory.map((round, idx) => (
+                    <tr key={idx} className={`hover:bg-slate-50 ${round.isDouble ? 'bg-amber-50/30' : ''} ${editingRoundIndex === idx ? 'bg-amber-100/50' : ''}`}>
+                      <td className="p-2 text-slate-300 font-mono text-[9px] text-left italic">
+                        <div className="flex items-center gap-1">
+                          #{gameHistory.length - idx}
+                          {round.isDouble && <Zap size={8} className="text-amber-500 fill-amber-500" />}
+                        </div>
+                      </td>
+                      {players.map(p => (
+                        <td key={p.id} className={`p-2 font-black text-xs ${round.scores[p.id] > 0 ? 'text-red-500' : round.scores[p.id] < 0 ? 'text-blue-500' : 'text-slate-200'}`}>
+                          {round.scores[p.id] > 0 ? `+${round.scores[p.id]}` : round.scores[p.id]}
+                        </td>
+                      ))}
+                      <td className="p-2">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => editRound(idx)} className="text-slate-300 hover:text-amber-500 p-1">
+                            <Edit2 size={12} />
+                          </button>
+                          <button onClick={() => deleteRound(idx)} className="text-slate-300 hover:text-red-500 p-1">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default App;

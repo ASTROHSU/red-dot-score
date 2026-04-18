@@ -1,0 +1,9 @@
+[1G[0K⠙[1G[0K
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[1G[0K⠙[1G[0K3:00:50 PM [express] serving on port 5000
+3:01:15 PM [express] POST /api/games 201 in 31ms :: {"id":2,"code":"54GSB9","baseScore":60,"exchangeRate":5,"state":{"players":[{"id":1,"name":"玩家 1"},{"id":2,"name":"玩家 2"},{"id":3,"name":"玩家 3"},{"id":4,"name":"玩家 4"}],"gameHistory":[]},"lastUpdated":"2026-03-30T15:01:15.692Z"}
+3:01:15 PM [express] GET /api/games/54GSB9 200 in 10ms :: {"id":2,"code":"54GSB9","baseScore":60,"exchangeRate":5,"state":{"players":[{"id":1,"name":"玩家 1"},{"id":2,"name":"玩家 2"},{"id":3,"name":"玩家 3"},{"id":4,"name":"玩家 4"}],"gameHistory":[]},"lastUpdated":"2026-03-30T15:01:15.692Z"}
+3:01:18 PM [express] GET /api/games/54GSB9 304 in 3ms :: {"id":2,"code":"54GSB9","baseScore":60,"exchangeRate":5,"state":{"players":[{"id":1,"name":"玩家 1"},{"id":2,"name":"玩家 2"},{"id":3,"name":"玩家 3"},{"id":4,"name":"玩家 4"}],"gameHistory":[]},"lastUpdated":"2026-03-30T15:01:15.692Z"}
+3:01:21 PM [express] GET /api/games/54GSB9 304 in 3ms :: {"id":2,"code":"54GSB9","baseScore":60,"exchangeRate":5,"state":{"players":[{"id":1,"name":"玩家 1"},{"id":2,"name":"玩家 2"},{"id":3,"name":"玩家 3"},{"id":4,"name":"玩家 4"}],"gameHistory":[]},"lastUpdated":"2026-03-30T15:01:15.692Z"}
