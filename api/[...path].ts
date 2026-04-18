@@ -2,11 +2,13 @@ import pg from "pg";
 
 function normalizePath(pathParam: unknown): string[] {
   if (Array.isArray(pathParam)) {
-    return pathParam.filter((part): part is string => typeof part === "string");
+    return pathParam
+      .filter((part): part is string => typeof part === "string")
+      .flatMap((part) => part.split("/").filter(Boolean));
   }
 
   if (typeof pathParam === "string") {
-    return [pathParam];
+    return pathParam.split("/").filter(Boolean);
   }
 
   return [];
