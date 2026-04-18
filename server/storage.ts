@@ -4,7 +4,7 @@ import {
   type InsertGame,
   type UpdateGameRequest,
   type Game,
-} from "@shared/schema";
+} from "../shared/schema";
 import { eq } from "drizzle-orm";
 
 type GameState = Game["state"];
