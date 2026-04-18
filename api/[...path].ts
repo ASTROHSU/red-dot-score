@@ -1,6 +1,4 @@
-import { z } from "zod";
-import { storage } from "../server/storage";
-import { api } from "../shared/routes";
+import pg from "pg";
 
 function normalizePath(pathParam: unknown): string[] {
   if (Array.isArray(pathParam)) {
@@ -26,36 +24,182 @@ function parseBody(body: unknown): unknown {
   }
 }
 
+type GameState = {
+  players: { id: number; name: string }[];
+  gameHistory: {
+    scores: Record<string, number>;
+    isDouble: boolean;
+    rawScores: Record<string, number>;
+  }[];
+};
+
+type Game = {
+  id: number;
+  code: string;
+  baseScore: number;
+  exchangeRate: number;
+  state: GameState;
+  lastUpdated: string | Date | null;
+};
+
+const defaultState = (): GameState => ({
+  players: [
+    { id: 1, name: "玩家 1" },
+    { id: 2, name: "玩家 2" },
+    { id: 3, name: "玩家 3" },
+    { id: 4, name: "玩家 4" },
+  ],
+  gameHistory: [],
+});
+
+const memoryGames = new Map<string, Game>();
+let memoryNextId = 1;
+let pool: pg.Pool | null = null;
+
+function toGame(row: any): Game {
+  return {
+    id: row.id,
+    code: row.code,
+    baseScore: row.base_score ?? row.baseScore,
+    exchangeRate: row.exchange_rate ?? row.exchangeRate,
+    state:
+      typeof row.state === "string" ? JSON.parse(row.state) : (row.state as GameState),
+    lastUpdated: row.last_updated ?? row.lastUpdated ?? null,
+  };
+}
+
+function getPool(): pg.Pool | null {
+  if (!process.env.DATABASE_URL) {
+    return null;
+  }
+
+  if (!pool) {
+    const { Pool } = pg;
+    pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  }
+
+  return pool;
+}
+
+async function createGame(): Promise<Game> {
+  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const db = getPool();
+
+  if (!db) {
+    const game: Game = {
+      id: memoryNextId++,
+      code,
+      baseScore: 60,
+      exchangeRate: 5,
+      state: defaultState(),
+      lastUpdated: new Date(),
+    };
+    memoryGames.set(code, game);
+    return game;
+  }
+
+  const result = await db.query(
+    `
+    INSERT INTO games (code, base_score, exchange_rate, state, last_updated)
+    VALUES ($1, $2, $3, $4::jsonb, NOW())
+    RETURNING id, code, base_score, exchange_rate, state, last_updated
+    `,
+    [code, 60, 5, JSON.stringify(defaultState())],
+  );
+
+  return toGame(result.rows[0]);
+}
+
+async function getGame(code: string): Promise<Game | undefined> {
+  const db = getPool();
+  if (!db) {
+    return memoryGames.get(code);
+  }
+
+  const result = await db.query(
+    `
+    SELECT id, code, base_score, exchange_rate, state, last_updated
+    FROM games
+    WHERE code = $1
+    `,
+    [code],
+  );
+
+  if (!result.rows[0]) {
+    return undefined;
+  }
+
+  return toGame(result.rows[0]);
+}
+
+async function updateGame(
+  code: string,
+  updates: Partial<{
+    baseScore: number;
+    exchangeRate: number;
+    state: GameState;
+  }>,
+): Promise<Game | undefined> {
+  const db = getPool();
+
+  if (!db) {
+    const existing = memoryGames.get(code);
+    if (!existing) {
+      return undefined;
+    }
+    const updated: Game = {
+      ...existing,
+      baseScore: updates.baseScore ?? existing.baseScore,
+      exchangeRate: updates.exchangeRate ?? existing.exchangeRate,
+      state: updates.state ?? existing.state,
+      lastUpdated: new Date(),
+    };
+    memoryGames.set(code, updated);
+    return updated;
+  }
+
+  const existing = await getGame(code);
+  if (!existing) {
+    return undefined;
+  }
+
+  const result = await db.query(
+    `
+    UPDATE games
+    SET
+      base_score = $2,
+      exchange_rate = $3,
+      state = $4::jsonb,
+      last_updated = NOW()
+    WHERE code = $1
+    RETURNING id, code, base_score, exchange_rate, state, last_updated
+    `,
+    [
+      code,
+      updates.baseScore ?? existing.baseScore,
+      updates.exchangeRate ?? existing.exchangeRate,
+      JSON.stringify(updates.state ?? existing.state),
+    ],
+  );
+
+  return toGame(result.rows[0]);
+}
+
 export default async function handler(req: any, res: any): Promise<void> {
   const path = normalizePath(req.query?.path);
 
-  if (
-    req.method === api.games.create.method &&
-    path.length === 1 &&
-    path[0] === "games"
-  ) {
+  if (req.method === "POST" && path.length === 1 && path[0] === "games") {
     try {
-      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const game = await storage.createGame({
-        code,
-        baseScore: 60,
-        exchangeRate: 5,
-        state: {
-          players: [
-            { id: 1, name: "玩家 1" },
-            { id: 2, name: "玩家 2" },
-            { id: 3, name: "玩家 3" },
-            { id: 4, name: "玩家 4" },
-          ],
-          gameHistory: [],
-        },
-      });
+      const game = await createGame();
 
       res.status(201).json(game);
       return;
     } catch (error) {
       console.error(error);
-      res.status(500).json({ message: "Failed to create game" });
+      res.status(500).json({
+        message: "Failed to create game",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
       return;
     }
   }
@@ -63,8 +207,8 @@ export default async function handler(req: any, res: any): Promise<void> {
   if (path.length === 2 && path[0] === "games") {
     const code = path[1];
 
-    if (req.method === api.games.get.method) {
-      const game = await storage.getGameByCode(code);
+    if (req.method === "GET") {
+      const game = await getGame(code);
       if (!game) {
         res.status(404).json({ message: "Game not found" });
         return;
@@ -74,22 +218,26 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    if (req.method === api.games.update.method) {
+    if (req.method === "PATCH") {
       try {
-        const input = api.games.update.input.parse(parseBody(req.body));
-        const game = await storage.updateGame(code, input);
+        const input = parseBody(req.body) as Partial<{
+          baseScore: number;
+          exchangeRate: number;
+          state: GameState;
+        }>;
+        const game = await updateGame(code, input);
+        if (!game) {
+          res.status(404).json({ message: "Game not found" });
+          return;
+        }
         res.status(200).json(game);
         return;
       } catch (error) {
-        if (error instanceof z.ZodError) {
-          res.status(400).json({
-            message: error.errors[0]?.message ?? "Invalid request body",
-            field: error.errors[0]?.path.join("."),
-          });
-          return;
-        }
-
-        res.status(404).json({ message: "Game not found" });
+        console.error(error);
+        res.status(500).json({
+          message: "Failed to update game",
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
         return;
       }
     }
